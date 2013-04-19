@@ -9,10 +9,9 @@ APACHE_VERSION="2.4.3"
 APACHE_PATH="apache"
 PHP_VERSION="5.4.11"
 PHP_PATH="php"
-BUILDPACK_VERSION="2.0-a7"
-#BP_URL="https://s3.amazonaws.com/licorice-labs-buildpacks/apache-$APACHE_VERSION-php-$PHP_VERSION-v$BUILDPACK_VERSION.tar.gz"
-BP_URL="http://php-imap-build.herokuapp.com/output/82e18955-d421-440e-ba42-08b3d549cb7c"
-OPT_BUILDPACK_URL="http://php-imap-build.herokuapp.com/output/82e18955-d421-440e-ba42-08b3d549cb7c"
+BUILDPACK_VERSION="1.0.0"
+BP_URL="https://s3.amazonaws.com/mattiasottosson/buildpacks/apache-$APACHE_VERSION-php-$PHP_VERSION-v$BUILDPACK_VERSION.tar.gz"
+OPT_BUILDPACK_URL="http://php-imap-build.herokuapp.com/output/e215421d-17f2-4770-a68d-466989fe5d98"
 
 BIN_DIR=$(dirname $0)
 BUILD_DIR=$1
