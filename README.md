@@ -6,6 +6,10 @@ This is a build pack bundling PHP and Apache for Heroku apps.
 * PHP 5.4.11
 * Apache HTTP Server 2.4.3
 
+Demo-app
+-------------
+    http://php-imap.herokuapp.com/
+
 Configuration
 -------------
 
