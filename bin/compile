@@ -5,12 +5,14 @@
 set -e
 
 # config
-APACHE_VERSION="2.2.23"
+APACHE_VERSION="2.4.3"
 APACHE_PATH="apache"
-PHP_VERSION="5.3.17"
+PHP_VERSION="5.4.11"
 PHP_PATH="php"
-BUILDPACK_VERSION="1.2"
-
+BUILDPACK_VERSION="2.0-a7"
+#BP_URL="https://s3.amazonaws.com/licorice-labs-buildpacks/apache-$APACHE_VERSION-php-$PHP_VERSION-v$BUILDPACK_VERSION.tar.gz"
+BP_URL="http://php-imap-build.herokuapp.com/output/82e18955-d421-440e-ba42-08b3d549cb7c"
+OPT_BUILDPACK_URL="http://php-imap-build.herokuapp.com/output/82e18955-d421-440e-ba42-08b3d549cb7c"
 
 BIN_DIR=$(dirname $0)
 BUILD_DIR=$1
@@ -20,6 +22,7 @@ LP_DIR=`cd $(dirname $0); cd ..; pwd`
 # include .files when moving things around
 shopt -s dotglob
 
+echo "Build dir is $BUILD_DIR"
 cd $BUILD_DIR
 
 # move app things to www
@@ -27,29 +30,25 @@ mkdir -p $CACHE_DIR/www
 mv * $CACHE_DIR/www
 mv $CACHE_DIR/www .
 
-# keep Procfile
+# move Procfile back to where it is expected
 if [ -f www/Procfile ]; then
   mv www/Procfile .
 fi
 
-BP_URL="https://s3.amazonaws.com/licorice-labs-buildpacks/apache-$APACHE_VERSION-php-$PHP_VERSION-v$BUILDPACK_VERSION.tar.gz"
-echo "-----> Bundling Apache $APACHE_VERSION PHP $PHP_VERSION build $BUILDPACK_VERSION"
-curl --silent --max-time 60 --location "$BP_URL" | tar xz
-
-# echo "-----> Extracting bsdiff binary"
-# tar xzf $LP_DIR/src/bsdiff.tgz
-# echo "-----> Bundling Apache $APACHE_VERSION/PHP $PHP_VERSION build"
-# gunzip $LP_DIR/src/build.tgz
-# local/bin/bspatch $LP_DIR/src/build.tar $LP_DIR/src/build-apache-$APACHE_VERSION-php-$PHP_VERSION.tar $LP_DIR/src/build.bsdiff
-# tar xf $LP_DIR/src/build-apache-$APACHE_VERSION-php-$PHP_VERSION.tar
+echo "-----> Extracting Apache $APACHE_VERSION PHP $PHP_VERSION build $BUILDPACK_VERSION"
+echo "-----> from $OPT_BUILDPACK_URL"
+curl --silent --max-time 60 --location "$OPT_BUILDPACK_URL" | tar xz
 
 # update config files
 cp $LP_DIR/conf/httpd.conf $APACHE_PATH/conf
 cp $LP_DIR/conf/php.ini php
+cp $LP_DIR/conf/php-fpm.conf $BUILD_DIR/php/etc/
 
-# make php available on bin
-mkdir -p bin
-ln -s /app/php/bin/php bin/php
+# make php available on bin wtih symbolic link, use relative path so it works when remounted
+mkdir bin
+cd bin
+ln -s ../php/bin/php php
+cd ..
 
 export LD_LIBRARY_PATH=$BUILD_DIR/local/lib
 
@@ -58,10 +57,21 @@ slug_id=$(php/bin/php -r "echo md5(uniqid('', TRUE));")
 echo $slug_id > SLUG_ID
 echo "Creating Slug Identifier file with id: ${slug_id}"
 
+echo "Installing Composer binary"
+curl -s https://getcomposer.org/installer | $BUILD_DIR/bin/php -- --install-dir=bin
+mv bin/composer.phar bin/composer
+
+if [ -f $BUILD_DIR/www/composer.json ]; then
+  echo "Installing Composer dependencies"
+  cd $BUILD_DIR/www
+  $BUILD_DIR/bin/php $BUILD_DIR/bin/composer install --prefer-dist
+  cd $BUILD_DIR
+fi
+
 cat >>boot.sh <<EOF
 echo "Checking for WWWROOT environment variable..."
 if [ -n "\${WWWROOT:+x}" ]; then
-  sed -ie "s%/app/www%/app/www\$WWWROOT%" /app/apache/conf/httpd.conf
+  sed -ie "s%/app/www[^\\"]*%/app/www\$WWWROOT%" /app/apache/conf/httpd.conf
 fi
 
 export HW_ADDR=\`/sbin/ifconfig eth0 | grep HWaddr | awk '{print \$5}'\`
@@ -79,16 +89,23 @@ tail -F /app/apache/logs/error_log &
 tail -F /app/apache/logs/access_log &
 tail -F \$PHP_ERROR_LOG &
 export LD_LIBRARY_PATH=/app/local/lib
-export PHP_INI_SCAN_DIR=/app/www
+# export PHP_INI_SCAN_DIR=/app/php
 
 # let's check for hook scripts
+# .hooks will be DEPRECATED soon in favor of .heroku
 if [ -d www/.hooks ]; then
   for file in www/.hooks/*.sh; do
-    if [ -f \$file ]; then
-      /bin/bash \$file
-    fi
+    /bin/bash \$file
   done
 fi
+if [ -d www/.heroku ]; then
+  for file in www/.heroku/*.sh; do
+    /bin/bash \$file
+  done
+fi
+
+echo "Launching PHP FPM"
+/app/php/sbin/php-fpm -y /app/php/etc/php-fpm.conf -c /app/php/php.ini
 
 echo "Launching apache"
 exec /app/apache/bin/httpd -DNO_DETACH
@@ -98,3 +115,17 @@ chmod +x boot.sh
 
 # clean the cache
 rm -rf $CACHE_DIR/*
+
+# run a post build script from the app
+# .hooks will be DEPRECATED soon in favor of .heroku
+if [ -d $BUILD_DIR/www/.hooks -a -f $BUILD_DIR/www/.hooks/build.sh ]; then
+    chmod 0755 $BUILD_DIR/www/.hooks/build.sh
+    /usr/bin/env bash $BUILD_DIR/www/.hooks/build.sh
+    rm $BUILD_DIR/www/.hooks/build.sh
+fi
+
+if [ -d $BUILD_DIR/www/.heroku -a -f $BUILD_DIR/www/.heroku/compile.sh ]; then
+    chmod 0755 $BUILD_DIR/www/.heroku/compile.sh
+    /usr/bin/env bash $BUILD_DIR/www/.heroku/compile.sh
+    rm $BUILD_DIR/www/.heroku/compile.sh
+fi
